@@ -26,8 +26,8 @@ interface FormData {
 const LoanForm: React.FC<LoanFormProps> = ({ loan, onSubmit, onCancel, title }) => {
   // Check if the existing loan has a custom EMI (different from calculated EMI)
   const hasCustomEmi = loan ? (() => {
-    const calculatedEmi = calculateEMI(loan.principalAmount, loan.interestRate, loan.tenure);
-    return Math.abs(loan.emiAmount - calculatedEmi) > 1; // Allow small rounding differences
+    const calculatedEmi = calculateEMI(loan.principalAmount, Number(loan.interestRate), loan.tenure);
+    return Math.abs(Number(loan.emiAmount) - calculatedEmi) > 1; // Allow small rounding differences
   })() : false;
 
   const {
@@ -39,12 +39,14 @@ const LoanForm: React.FC<LoanFormProps> = ({ loan, onSubmit, onCancel, title }) 
   } = useForm<FormData>({
     defaultValues: {
       name: loan?.name || '',
-      principalAmount: loan?.principalAmount || 0,
-      interestRate: loan?.interestRate || 0,
-      tenure: loan?.tenure || 0,
+      principalAmount: Number(loan?.principalAmount) || 0,
+      interestRate: Number(loan?.interestRate) || 0,
+      tenure: Number(loan?.tenure) || 0,
       startDate: loan?.startDate ? loan.startDate.toISOString().split('T')[0] : '',
-      customEmi: loan?.emiAmount || 0,
-      useCustomEmi: hasCustomEmi
+      customEmi: loan?.useCustomEmi
+        ? (Number(loan?.customEmi ?? loan?.emiAmount) || 0)
+        : (Number(loan?.emiAmount) || 0),
+      useCustomEmi: loan?.useCustomEmi ?? hasCustomEmi
     }
   });
 
@@ -68,6 +70,9 @@ const LoanForm: React.FC<LoanFormProps> = ({ loan, onSubmit, onCancel, title }) 
       currentPrincipal: loan ? loan.currentPrincipal : Number(data.principalAmount),
       interestRate: Number(data.interestRate),
       emiAmount: Number(emiAmount),
+      // persist custom EMI settings
+      useCustomEmi: Boolean(data.useCustomEmi),
+      customEmi: data.useCustomEmi ? Number(data.customEmi) || Number(emiAmount) : undefined,
       startDate,
       tenure: Number(data.tenure),
       nextEmiDate: addMonths(startDate, 1),

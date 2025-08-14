@@ -11,44 +11,89 @@ export const calculateEMI = (
   tenureMonths: number
 ): number => {
   const monthlyRate = annualRate / 100 / 12;
+  if (tenureMonths <= 0 || principal <= 0 || monthlyRate <= 0) return 0;
   const compound = Math.pow(1 + monthlyRate, tenureMonths);
   return (principal * monthlyRate * compound) / (compound - 1);
+};
+
+// Choose the EMI to use for display/calculation (custom when enabled)
+const getSelectedEmi = (loan: Loan): number => {
+  if (loan.useCustomEmi && loan.customEmi && loan.customEmi > 0) {
+    return Number(loan.customEmi);
+  }
+  // Use original generated EMI (based on original inputs)
+  return calculateEMI(Number(loan.principalAmount), Number(loan.interestRate), Number(loan.tenure));
+};
+
+// Count how many EMIs have been paid based on the 5th-of-month schedule
+const getEmisPaid = (loan: Loan, today: Date): number => {
+  const firstDueBase = new Date(loan.startDate.getFullYear(), loan.startDate.getMonth(), 5);
+  const firstDue = loan.startDate.getDate() > 5 ? addMonths(firstDueBase, 1) : firstDueBase;
+
+  // If loan hasn't reached first due date yet
+  if (today < firstDue) return 0;
+
+  // Determine last paid anchor (5th). On/after 5th => current month; before 5th => previous month
+  const lastPaidAnchor = today.getDate() >= 5
+    ? new Date(today.getFullYear(), today.getMonth(), 5)
+    : new Date(today.getFullYear(), today.getMonth() - 1, 5);
+
+  const monthsBetween = differenceInMonths(lastPaidAnchor, firstDue);
+  const emisPaid = monthsBetween + 1; // include both endpoints
+  return Math.max(0, Math.min(emisPaid, Number(loan.tenure)));
 };
 
 /**
  * Calculate remaining EMIs and other loan details
  */
 export const calculateLoanDetails = (loan: Loan): LoanCalculation => {
-  const currentDate = new Date();
-  const monthsElapsed = differenceInMonths(currentDate, loan.startDate);
-  const remainingEmis = Math.max(0, loan.tenure - monthsElapsed);
-
-  // Calculate remaining principal considering part payments
-  const totalPartPayments = loan.partPayments.reduce((sum, payment) => sum + payment.amount, 0);
-  const remainingPrincipal = Math.max(0, loan.currentPrincipal - totalPartPayments);
-
-  // Calculate next EMI date (5th of current or next month)
   const today = new Date();
-  let nextEmiDate = new Date(today.getFullYear(), today.getMonth(), 5);
 
+  // Scheduled EMIs paid so far
+  const emisPaid = getEmisPaid(loan, today);
+  const remainingEmis = Math.max(0, Number(loan.tenure) - emisPaid);
+
+  const monthlyRate = Number(loan.interestRate) / 100 / 12;
+  const selectedEmi = getSelectedEmi(loan);
+
+  // Start from current principal (already reduced by part-payments via app logic)
+  let remainingPrincipal = Math.max(0, Number(loan.currentPrincipal));
+
+  // Reduce principal by already-paid EMIs (principal portion only)
+  for (let m = 0; m < emisPaid && remainingPrincipal > 0 && selectedEmi > 0; m++) {
+    const interestPortion = remainingPrincipal * monthlyRate;
+    const principalPortion = Math.max(0, selectedEmi - interestPortion);
+    if (principalPortion <= 0) break; // underpayment safety
+    remainingPrincipal = Math.max(0, remainingPrincipal - principalPortion);
+  }
+
+  // Next EMI date (5th of current or next month)
+  let nextEmiDate = new Date(today.getFullYear(), today.getMonth(), 5);
   if (today.getDate() >= 5) {
     nextEmiDate = addMonths(nextEmiDate, 1);
   }
 
-  // Recalculate EMI if there were part payments
-  const adjustedEMI = remainingEmis > 0 && remainingPrincipal > 0
-    ? calculateEMI(remainingPrincipal, loan.interestRate, remainingEmis)
-    : loan.emiAmount;
+  // Estimate total future interest from now
+  let totalInterest = 0;
+  if (remainingPrincipal > 0 && selectedEmi > 0 && remainingEmis > 0) {
+    let rp = remainingPrincipal;
+    for (let i = 0; i < remainingEmis && rp > 0; i++) {
+      const interest = rp * monthlyRate;
+      const principalPay = Math.max(0, selectedEmi - interest);
+      totalInterest += interest;
+      rp = Math.max(0, rp - principalPay);
+      if (principalPay <= 0) break;
+    }
+  }
 
-  const totalInterest = (adjustedEMI * remainingEmis) - remainingPrincipal;
   const totalAmount = remainingPrincipal + totalInterest;
 
   return {
-    emiAmount: adjustedEMI,
+    emiAmount: selectedEmi,
     totalInterest: Math.max(0, totalInterest),
     totalAmount: Math.max(0, totalAmount),
     remainingEmis,
-    remainingPrincipal,
+    remainingPrincipal: Math.max(0, remainingPrincipal),
     nextEmiDate
   };
 };
@@ -87,7 +132,7 @@ export const generateSuggestions = (loans: Loan[]): FinancialSuggestion[] => {
   if (activeLoans.length === 0) return suggestions;
 
   // Sort loans by interest rate (highest first) for part payment suggestions
-  const sortedByRate = [...activeLoans].sort((a, b) => b.interestRate - a.interestRate);
+  const sortedByRate = [...activeLoans].sort((a, b) => Number(b.interestRate) - Number(a.interestRate));
 
   // Suggest part payment for highest interest rate loan
   if (sortedByRate.length > 0) {
@@ -101,7 +146,7 @@ export const generateSuggestions = (loans: Loan[]): FinancialSuggestion[] => {
         id: `part-payment-${highestRateLoan.id}`,
         type: 'part_payment',
         title: `Consider Part Payment for ${highestRateLoan.name}`,
-        description: `Making a part payment on your highest interest loan (${highestRateLoan.interestRate}% p.a.) can save significant interest.`,
+        description: `Making a part payment on your highest interest loan (${Number(highestRateLoan.interestRate)}% p.a.) can save significant interest.`,
         priority: 'high',
         potentialSavings,
         loanId: highestRateLoan.id
@@ -112,7 +157,7 @@ export const generateSuggestions = (loans: Loan[]): FinancialSuggestion[] => {
   // Suggest focusing on shortest tenure high-rate loans
   const shortTermHighRate = activeLoans.filter(loan => {
     const details = calculateLoanDetails(loan);
-    return details.remainingEmis <= 24 && loan.interestRate > 8;
+    return details.remainingEmis <= 24 && Number(loan.interestRate) > 8;
   });
 
   if (shortTermHighRate.length > 0) {
@@ -148,10 +193,21 @@ export const calculatePartPaymentSavings = (loan: Loan, partPaymentAmount: numbe
   }
 
   const newPrincipal = currentDetails.remainingPrincipal - partPaymentAmount;
-  const newEMI = calculateEMI(newPrincipal, loan.interestRate, currentDetails.remainingEmis);
-  const newTotalInterest = (newEMI * currentDetails.remainingEmis) - newPrincipal;
+  const newEMI = getSelectedEmi(loan, newPrincipal, currentDetails.remainingEmis);
 
-  return Math.max(0, currentDetails.totalInterest - newTotalInterest);
+  // Simulate new total interest with same remaining months
+  const monthlyRate = Number(loan.interestRate) / 100 / 12;
+  let rp = newPrincipal;
+  let totalInterest = 0;
+  for (let i = 0; i < currentDetails.remainingEmis && rp > 0; i++) {
+    const interest = rp * monthlyRate;
+    const principalPay = Math.max(0, newEMI - interest);
+    totalInterest += interest;
+    rp = Math.max(0, rp - principalPay);
+    if (principalPay <= 0) break;
+  }
+
+  return Math.max(0, currentDetails.totalInterest - totalInterest);
 };
 
 /**
@@ -163,7 +219,7 @@ export const formatCurrency = (amount: number): string => {
     currency: 'INR',
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
-  }).format(amount);
+  }).format(Number(amount) || 0);
 };
 
 /**
@@ -199,13 +255,13 @@ export const calculateLoanProjection = (loan: Loan): {
   remainingPrincipal: number;
 }[] => {
   const details = calculateLoanDetails(loan);
-  const monthlyRate = loan.interestRate / 100 / 12;
+  const monthlyRate = Number(loan.interestRate) / 100 / 12;
   let remainingPrincipal = details.remainingPrincipal;
-  const projection = [];
+  const projection = [] as { month: number; principalPayment: number; interestPayment: number; remainingPrincipal: number; }[];
 
   for (let month = 1; month <= Math.min(details.remainingEmis, 60); month++) { // Show max 5 years
     const interestPayment = remainingPrincipal * monthlyRate;
-    const principalPayment = details.emiAmount - interestPayment;
+    const principalPayment = Math.max(0, details.emiAmount - interestPayment);
     remainingPrincipal = Math.max(0, remainingPrincipal - principalPayment);
 
     projection.push({
@@ -232,7 +288,7 @@ export const getCombinedLoanProjection = (loans: Loan[]): {
 }[] => {
   const activeLoans = loans.filter(loan => loan.isActive);
   const maxMonths = 60; // 5 years
-  const combinedData = [];
+  const combinedData = [] as { month: number; totalPrincipalPayment: number; totalInterestPayment: number; totalRemainingPrincipal: number; }[];
 
   for (let month = 1; month <= maxMonths; month++) {
     let totalPrincipalPayment = 0;

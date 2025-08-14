@@ -12,6 +12,9 @@ export interface Loan {
   isActive: boolean;
   partPayments: PartPayment[];
   interestRateChanges: InterestRateChange[];
+  // Custom EMI support (optional for backward compatibility)
+  useCustomEmi?: boolean;
+  customEmi?: number;
 }
 
 export interface PartPayment {

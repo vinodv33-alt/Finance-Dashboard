@@ -79,7 +79,7 @@ const LoanTable: React.FC<LoanTableProps> = ({
                     {formatCurrency(loan.principalAmount)}
                   </td>
                   <td className="py-4 px-6 text-right text-white/80">
-                    {loan.interestRate.toFixed(2)}%
+                    {Number(loan.interestRate).toFixed(2)}%
                   </td>
                   <td className="py-4 px-6 text-right text-white/80">
                     {formatCurrency(details.emiAmount)}

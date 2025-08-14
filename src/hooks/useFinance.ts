@@ -143,13 +143,21 @@ export const useDashboard = () => {
   const [suggestions, setSuggestions] = useState<FinancialSuggestion[]>([]);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
+  // Determine next EMI date as the earliest among active loans
+  const activeLoans = loans.filter(l => l.isActive);
+  const nextEmiDate = activeLoans.length
+    ? activeLoans
+        .map(l => calculateLoanDetails(l).nextEmiDate)
+        .sort((a, b) => a.getTime() - b.getTime())[0]
+    : new Date(new Date().getFullYear(), new Date().getMonth(), 5);
+
   const dashboardData: DashboardData = {
     totalOutstandingDebt: calculateTotalDebt(loans),
     totalSavings,
     monthlyEmi: calculateTotalMonthlyEMI(loans),
     loans,
     savings,
-    nextEmiDate: new Date(new Date().getFullYear(), new Date().getMonth(), 5)
+    nextEmiDate
   };
 
   useEffect(() => {

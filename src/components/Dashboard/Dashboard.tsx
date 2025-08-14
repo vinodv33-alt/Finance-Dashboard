@@ -5,6 +5,7 @@ import DebtSavingsChart from './DebtSavingsChart';
 import LoanTable from './LoanTable';
 import SummaryCards from './SummaryCards';
 import { formatCurrency, formatDate } from '@/utils/calculations';
+import LoanProjectionChart from './LoanProjectionChart';
 
 const Dashboard: React.FC = () => {
   const { dashboardData, lastRefresh } = useDashboard();
@@ -72,6 +73,15 @@ const Dashboard: React.FC = () => {
           </div>
         </motion.div>
       </div>
+
+      {/* Payment Projection Chart */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.35 }}
+      >
+        <LoanProjectionChart dashboardData={dashboardData} />
+      </motion.div>
 
       {/* Loan Table */}
       <motion.div

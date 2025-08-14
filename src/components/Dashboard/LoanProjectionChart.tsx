@@ -1,30 +1,14 @@
 import React from 'react';
 import {
   Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  LineElement,
-  PointElement,
-  Title,
-  Tooltip,
-  Legend,
+  registerables
 } from 'chart.js';
 import { Line, Bar } from 'react-chartjs-2';
 import { DashboardData } from '@/types';
 import { getCombinedLoanProjection, formatCurrency } from '@/utils/calculations';
 import { TrendingDown, BarChart3 } from 'lucide-react';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  LineElement,
-  PointElement,
-  Title,
-  Tooltip,
-  Legend
-);
+ChartJS.register(...registerables);
 
 interface LoanProjectionChartProps {
   dashboardData: DashboardData;

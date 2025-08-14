@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useDashboard } from '@/hooks/useFinance';
 import DebtSavingsChart from './DebtSavingsChart';
@@ -6,9 +6,15 @@ import LoanTable from './LoanTable';
 import SummaryCards from './SummaryCards';
 import { formatCurrency, formatDate } from '@/utils/calculations';
 import LoanProjectionChart from './LoanProjectionChart';
+import PartPaymentForm from '@/components/LoanManagement/PartPaymentForm';
 
 const Dashboard: React.FC = () => {
-  const { dashboardData, lastRefresh } = useDashboard();
+  const { dashboardData, lastRefresh, addPartPayment, removeLastPartPayment } = useDashboard();
+  const [partPaymentLoanId, setPartPaymentLoanId] = useState<string | null>(null);
+
+  const selectedLoan = partPaymentLoanId
+    ? dashboardData.loans.find(l => l.id === partPaymentLoanId) || null
+    : null;
 
   return (
     <div className="space-y-8">
@@ -83,14 +89,36 @@ const Dashboard: React.FC = () => {
         <LoanProjectionChart dashboardData={dashboardData} />
       </motion.div>
 
-      {/* Loan Table */}
+      {/* Loan Table with Part Payment action */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.4 }}
       >
-        <LoanTable loans={dashboardData.loans} />
+        <LoanTable
+          loans={dashboardData.loans}
+          onPartPayment={(loan) => setPartPaymentLoanId(loan.id)}
+          onUndoLastPartPayment={(loan) => {
+            if (confirm('Undo the last part payment for this loan?')) {
+              removeLastPartPayment(loan.id);
+            }
+          }}
+          showActions={true}
+        />
       </motion.div>
+
+      {/* Part Payment Modal */}
+      {selectedLoan && partPaymentLoanId && (
+        <PartPaymentForm
+          loanId={partPaymentLoanId}
+          loan={selectedLoan}
+          onSubmit={(data) => {
+            addPartPayment(partPaymentLoanId, data);
+            setPartPaymentLoanId(null);
+          }}
+          onCancel={() => setPartPaymentLoanId(null)}
+        />
+      )}
     </div>
   );
 };

@@ -44,9 +44,9 @@ const PartPaymentForm: React.FC<PartPaymentFormProps> = ({
 
   const handleFormSubmit = (data: FormData) => {
     const partPayment: Omit<PartPayment, 'id'> = {
-      amount: data.amount,
+      amount: Number(data.amount),
       date: new Date(data.date),
-      description: data.description || `Part payment of ${formatCurrency(data.amount)}`
+      description: data.description || `Part payment of ${formatCurrency(Number(data.amount))}`
     };
 
     onSubmit(partPayment);

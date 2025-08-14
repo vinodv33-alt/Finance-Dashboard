@@ -17,20 +17,39 @@ export const storage = {
       if (!stored) return [];
 
       const loans = JSON.parse(stored);
-      return loans.map((loan: any) => ({
-        ...loan,
-        startDate: new Date(loan.startDate),
-        nextEmiDate: new Date(loan.nextEmiDate),
-        lastEmiDate: loan.lastEmiDate ? new Date(loan.lastEmiDate) : undefined,
-        partPayments: loan.partPayments.map((pp: any) => ({
-          ...pp,
-          date: new Date(pp.date)
-        })),
-        interestRateChanges: loan.interestRateChanges.map((irc: any) => ({
-          ...irc,
-          effectiveDate: new Date(irc.effectiveDate)
-        }))
-      }));
+      return loans.map((loan: any) => {
+        const normalizedPartPayments = Array.isArray(loan.partPayments)
+          ? loan.partPayments.map((pp: any) => ({
+              ...pp,
+              amount: Number(pp?.amount) || 0,
+              date: new Date(pp.date)
+            }))
+          : [];
+
+        const normalizedInterestRateChanges = Array.isArray(loan.interestRateChanges)
+          ? loan.interestRateChanges.map((irc: any) => ({
+              ...irc,
+              oldRate: Number(irc?.oldRate) || 0,
+              newRate: Number(irc?.newRate) || 0,
+              effectiveDate: new Date(irc.effectiveDate)
+            }))
+          : [];
+
+        return {
+          ...loan,
+          principalAmount: Number(loan?.principalAmount) || 0,
+          currentPrincipal: Number(loan?.currentPrincipal) || 0,
+          interestRate: Number(loan?.interestRate) || 0,
+          emiAmount: Number(loan?.emiAmount) || 0,
+          tenure: Number(loan?.tenure) || 0,
+          customEmi: loan?.customEmi != null ? Number(loan.customEmi) : undefined,
+          startDate: new Date(loan.startDate),
+          nextEmiDate: new Date(loan.nextEmiDate),
+          lastEmiDate: loan.lastEmiDate ? new Date(loan.lastEmiDate) : undefined,
+          partPayments: normalizedPartPayments,
+          interestRateChanges: normalizedInterestRateChanges
+        } as Loan;
+      });
     } catch (error) {
       console.error('Error loading loans:', error);
       return [];
@@ -54,6 +73,7 @@ export const storage = {
       const savings = JSON.parse(stored);
       return savings.map((account: any) => ({
         ...account,
+        amount: Number(account?.amount) || 0,
         dateAdded: new Date(account.dateAdded),
         lastUpdated: new Date(account.lastUpdated)
       }));
@@ -128,12 +148,29 @@ export const storage = {
 
       // Import loans
       if (Array.isArray(data.loans)) {
-        storage.saveLoans(data.loans);
+        // Normalize before saving
+        const normalized = data.loans.map((loan: any) => ({
+          ...loan,
+          principalAmount: Number(loan?.principalAmount) || 0,
+          currentPrincipal: Number(loan?.currentPrincipal) || 0,
+          interestRate: Number(loan?.interestRate) || 0,
+          emiAmount: Number(loan?.emiAmount) || 0,
+          tenure: Number(loan?.tenure) || 0,
+          customEmi: loan?.customEmi != null ? Number(loan.customEmi) : undefined,
+          partPayments: Array.isArray(loan.partPayments)
+            ? loan.partPayments.map((pp: any) => ({ ...pp, amount: Number(pp?.amount) || 0 }))
+            : []
+        }));
+        storage.saveLoans(normalized);
       }
 
       // Import savings
       if (Array.isArray(data.savings)) {
-        storage.saveSavings(data.savings);
+        const normalizedSavings = data.savings.map((s: any) => ({
+          ...s,
+          amount: Number(s?.amount) || 0
+        }));
+        storage.saveSavings(normalizedSavings);
       }
 
       // Import last refresh

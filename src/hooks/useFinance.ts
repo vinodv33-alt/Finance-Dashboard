@@ -58,10 +58,34 @@ export const useLoans = () => {
   const addPartPayment = useCallback((loanId: string, partPayment: any) => {
     const updatedLoans = loans.map(loan => {
       if (loan.id === loanId) {
+        const amt = Number(partPayment?.amount) || 0;
+        // Use amortized outstanding as baseline
+        const details = calculateLoanDetails(loan);
+        const baselineOutstanding = Number(details.remainingPrincipal) || Number(loan.currentPrincipal) || 0;
         return {
           ...loan,
-          partPayments: [...loan.partPayments, partPayment],
-          currentPrincipal: loan.currentPrincipal - partPayment.amount
+          partPayments: [...loan.partPayments, { ...partPayment, amount: amt }],
+          currentPrincipal: Math.max(0, baselineOutstanding - amt)
+        };
+      }
+      return loan;
+    });
+    setLoans(updatedLoans);
+    storage.saveLoans(updatedLoans);
+  }, [loans]);
+
+  const removeLastPartPayment = useCallback((loanId: string) => {
+    const updatedLoans = loans.map(loan => {
+      if (loan.id === loanId) {
+        if (loan.partPayments.length === 0) return loan;
+        const last = loan.partPayments[loan.partPayments.length - 1];
+        const amt = Number(last?.amount) || 0;
+        const restored = Number(loan.currentPrincipal) + amt;
+        const capped = Math.min(restored, Number(loan.principalAmount));
+        return {
+          ...loan,
+          partPayments: loan.partPayments.slice(0, -1),
+          currentPrincipal: capped
         };
       }
       return loan;
@@ -76,7 +100,8 @@ export const useLoans = () => {
     addLoan,
     updateLoan,
     deleteLoan,
-    addPartPayment
+    addPartPayment,
+    removeLastPartPayment
   };
 };
 
@@ -138,7 +163,7 @@ export const useSavings = () => {
  * Custom hook for dashboard data and auto-refresh
  */
 export const useDashboard = () => {
-  const { loans } = useLoans();
+  const { loans, addPartPayment, removeLastPartPayment } = useLoans();
   const { savings, totalSavings } = useSavings();
   const [suggestions, setSuggestions] = useState<FinancialSuggestion[]>([]);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
@@ -181,6 +206,8 @@ export const useDashboard = () => {
   return {
     dashboardData,
     suggestions,
-    lastRefresh
+    lastRefresh,
+    addPartPayment,
+    removeLastPartPayment
   };
 };

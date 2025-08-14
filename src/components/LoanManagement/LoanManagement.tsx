@@ -9,7 +9,7 @@ import { Plus, Calculator, CreditCard } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
 const LoanManagement: React.FC = () => {
-  const { loans, addLoan, updateLoan, deleteLoan, addPartPayment } = useLoans();
+  const { loans, addLoan, updateLoan, deleteLoan, addPartPayment, removeLastPartPayment } = useLoans();
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
   const [showPartPaymentForm, setShowPartPaymentForm] = useState<string | null>(null);
@@ -122,6 +122,12 @@ const LoanManagement: React.FC = () => {
           loans={loans}
           onEdit={setEditingLoan}
           onDelete={handleDeleteLoan}
+          onPartPayment={(loan) => setShowPartPaymentForm(loan.id)}
+          onUndoLastPartPayment={(loan) => {
+            if (confirm('Undo the last part payment for this loan?')) {
+              removeLastPartPayment(loan.id);
+            }
+          }}
           showActions={true}
         />
       </motion.div>

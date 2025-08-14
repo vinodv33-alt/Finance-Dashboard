@@ -49,22 +49,25 @@ const getEmisPaid = (loan: Loan, today: Date): number => {
 export const calculateLoanDetails = (loan: Loan): LoanCalculation => {
   const today = new Date();
 
-  // Scheduled EMIs paid so far
+  // Scheduled EMIs paid so far (used for fallback/schedule only)
   const emisPaid = getEmisPaid(loan, today);
-  const remainingEmis = Math.max(0, Number(loan.tenure) - emisPaid);
 
   const monthlyRate = Number(loan.interestRate) / 100 / 12;
   const selectedEmi = getSelectedEmi(loan);
 
-  // Start from current principal (already reduced by part-payments via app logic)
-  let remainingPrincipal = Math.max(0, Number(loan.currentPrincipal));
+  // Use currentPrincipal as source of truth (already reflects past EMIs/part-payments from imported data)
+  const outstandingNow = Math.max(0, Number(loan.currentPrincipal));
+  let remainingPrincipal = outstandingNow;
 
-  // Reduce principal by already-paid EMIs (principal portion only)
-  for (let m = 0; m < emisPaid && remainingPrincipal > 0 && selectedEmi > 0; m++) {
-    const interestPortion = remainingPrincipal * monthlyRate;
-    const principalPortion = Math.max(0, selectedEmi - interestPortion);
-    if (principalPortion <= 0) break; // underpayment safety
-    remainingPrincipal = Math.max(0, remainingPrincipal - principalPortion);
+  // Heuristic: if currentPrincipal equals original principal and no lastEmiDate, apply scheduled EMIs already paid
+  const shouldApplyPaidEmiReduction = (!loan.lastEmiDate) && (Math.abs(Number(loan.principalAmount) - Number(loan.currentPrincipal)) < 1);
+  if (shouldApplyPaidEmiReduction && emisPaid > 0 && selectedEmi > 0) {
+    for (let m = 0; m < emisPaid && remainingPrincipal > 0; m++) {
+      const interestPortion = remainingPrincipal * monthlyRate;
+      const principalPortion = Math.max(0, selectedEmi - interestPortion);
+      if (principalPortion <= 0) break;
+      remainingPrincipal = Math.max(0, remainingPrincipal - principalPortion);
+    }
   }
 
   // Next EMI date (5th of current or next month)
@@ -73,17 +76,32 @@ export const calculateLoanDetails = (loan: Loan): LoanCalculation => {
     nextEmiDate = addMonths(nextEmiDate, 1);
   }
 
-  // Estimate total future interest from now
+  // Simulate forward from outstanding to get months to finish and total interest
+  let remainingEmis = 0;
   let totalInterest = 0;
-  if (remainingPrincipal > 0 && selectedEmi > 0 && remainingEmis > 0) {
+  if (remainingPrincipal > 0 && selectedEmi > 0) {
     let rp = remainingPrincipal;
-    for (let i = 0; i < remainingEmis && rp > 0; i++) {
+    const safetyCap = 1200; // 100 years
+    while (rp > 0 && remainingEmis < safetyCap) {
       const interest = rp * monthlyRate;
       const principalPay = Math.max(0, selectedEmi - interest);
+      if (principalPay <= 0) {
+        // EMI too low to cover interest; avoid infinite loop
+        break;
+      }
       totalInterest += interest;
       rp = Math.max(0, rp - principalPay);
-      if (principalPay <= 0) break;
+      remainingEmis++;
     }
+  }
+
+  // Upper-bound by schedule so it can't increase over time
+  const scheduledRemaining = Math.max(0, Number(loan.tenure) - emisPaid);
+  if (remainingEmis === 0 && (remainingPrincipal > 0 && selectedEmi > 0)) {
+    // If for some reason we couldn't simulate, fall back to schedule
+    remainingEmis = scheduledRemaining;
+  } else if (remainingEmis > scheduledRemaining) {
+    remainingEmis = scheduledRemaining;
   }
 
   const totalAmount = remainingPrincipal + totalInterest;
@@ -193,13 +211,14 @@ export const calculatePartPaymentSavings = (loan: Loan, partPaymentAmount: numbe
   }
 
   const newPrincipal = currentDetails.remainingPrincipal - partPaymentAmount;
-  const newEMI = getSelectedEmi(loan, newPrincipal, currentDetails.remainingEmis);
+  const newEMI = getSelectedEmi(loan);
 
-  // Simulate new total interest with same remaining months
+  // Simulate new total interest with same EMI until finished
   const monthlyRate = Number(loan.interestRate) / 100 / 12;
   let rp = newPrincipal;
   let totalInterest = 0;
-  for (let i = 0; i < currentDetails.remainingEmis && rp > 0; i++) {
+  const safetyCap = 1200;
+  for (let i = 0; i < safetyCap && rp > 0; i++) {
     const interest = rp * monthlyRate;
     const principalPay = Math.max(0, newEMI - interest);
     totalInterest += interest;

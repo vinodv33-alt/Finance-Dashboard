@@ -2,12 +2,14 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Loan } from '@/types';
 import { calculateLoanDetails, formatCurrency, formatDate } from '@/utils/calculations';
-import { Edit, Trash2, DollarSign } from 'lucide-react';
+import { Edit, Trash2, DollarSign, TrendingDown, RotateCcw } from 'lucide-react';
 
 interface LoanTableProps {
   loans: Loan[];
   onEdit?: (loan: Loan) => void;
   onDelete?: (loanId: string) => void;
+  onPartPayment?: (loan: Loan) => void;
+  onUndoLastPartPayment?: (loan: Loan) => void;
   showActions?: boolean;
 }
 
@@ -15,6 +17,8 @@ const LoanTable: React.FC<LoanTableProps> = ({
   loans,
   onEdit,
   onDelete,
+  onPartPayment,
+  onUndoLastPartPayment,
   showActions = false
 }) => {
   const activeLoans = loans.filter(loan => loan.isActive);
@@ -100,20 +104,42 @@ const LoanTable: React.FC<LoanTableProps> = ({
                   {showActions && (
                     <td className="py-4 px-6">
                       <div className="flex items-center justify-center space-x-2">
-                        <button
-                          onClick={() => onEdit?.(loan)}
-                          className="p-2 text-white/60 hover:text-blue-400 transition-colors"
-                          title="Edit Loan"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => onDelete?.(loan.id)}
-                          className="p-2 text-white/60 hover:text-red-400 transition-colors"
-                          title="Delete Loan"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {onEdit && (
+                          <button
+                            onClick={() => onEdit?.(loan)}
+                            className="p-2 text-white/60 hover:text-blue-400 transition-colors"
+                            title="Edit Loan"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                        )}
+                        {onPartPayment && (
+                          <button
+                            onClick={() => onPartPayment?.(loan)}
+                            className="p-2 text-white/60 hover:text-green-400 transition-colors"
+                            title="Make Part Payment"
+                          >
+                            <TrendingDown className="w-4 h-4" />
+                          </button>
+                        )}
+                        {onUndoLastPartPayment && loan.partPayments.length > 0 && (
+                          <button
+                            onClick={() => onUndoLastPartPayment?.(loan)}
+                            className="p-2 text-white/60 hover:text-yellow-400 transition-colors"
+                            title="Undo Last Part Payment"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                          </button>
+                        )}
+                        {onDelete && (
+                          <button
+                            onClick={() => onDelete?.(loan.id)}
+                            className="p-2 text-white/60 hover:text-red-400 transition-colors"
+                            title="Delete Loan"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   )}
@@ -131,8 +157,8 @@ const LoanTable: React.FC<LoanTableProps> = ({
           <span className="text-xl font-bold text-red-400">
             {formatCurrency(
               activeLoans.reduce((total, loan) => {
-                const details = calculateLoanDetails(loan);
-                return total + details.remainingPrincipal;
+                const d = calculateLoanDetails(loan);
+                return total + d.remainingPrincipal;
               }, 0)
             )}
           </span>

@@ -9,7 +9,7 @@ import { Plus, Calculator, CreditCard } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
 const LoanManagement: React.FC = () => {
-  const { loans, addLoan, updateLoan, deleteLoan, addPartPayment, removeLastPartPayment } = useLoans();
+  const { loans, addLoan, updateLoan, deleteLoan, addPartPayment, removeLastPartPayment, reorderLoans } = useLoans();
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
   const [showPartPaymentForm, setShowPartPaymentForm] = useState<string | null>(null);
@@ -25,10 +25,13 @@ const LoanManagement: React.FC = () => {
 
   const handleEditLoan = (loanData: Omit<Loan, 'id'>) => {
     if (editingLoan) {
-      // Preserve existing loan properties that shouldn't be reset
-      const updatedLoanData = {
+      // Preserve existing loan properties that shouldn't be reset unless user changed them
+      const shouldUpdateCurrentPrincipal = Number(loanData.principalAmount) !== Number(editingLoan.principalAmount);
+
+      const updatedLoanData: Partial<Loan> = {
         ...loanData,
-        currentPrincipal: editingLoan.currentPrincipal, // Keep current principal (affected by part payments)
+        // If user changed principal amount in the edit, assume they intended to update outstanding as well
+        currentPrincipal: shouldUpdateCurrentPrincipal ? Number(loanData.principalAmount) : editingLoan.currentPrincipal,
         partPayments: editingLoan.partPayments, // Keep existing part payments
         interestRateChanges: editingLoan.interestRateChanges, // Keep rate change history
         lastEmiDate: editingLoan.lastEmiDate, // Keep last EMI date if it exists
@@ -129,6 +132,7 @@ const LoanManagement: React.FC = () => {
             }
           }}
           showActions={true}
+          onReorder={(fromId, toId) => reorderLoans(fromId, toId)}
         />
       </motion.div>
 

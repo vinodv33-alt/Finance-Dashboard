@@ -10,7 +10,10 @@ interface LoanTableProps {
   onDelete?: (loanId: string) => void;
   onPartPayment?: (loan: Loan) => void;
   onUndoLastPartPayment?: (loan: Loan) => void;
+  onSelect?: (loanId: string | null) => void;
+  selectedLoanId?: string | null;
   showActions?: boolean;
+  onReorder?: (fromId: string, toId: string | null) => void;
 }
 
 const LoanTable: React.FC<LoanTableProps> = ({
@@ -19,9 +22,15 @@ const LoanTable: React.FC<LoanTableProps> = ({
   onDelete,
   onPartPayment,
   onUndoLastPartPayment,
-  showActions = false
+  onSelect,
+  selectedLoanId = null,
+  showActions = false,
+  onReorder
 }) => {
   const activeLoans = loans.filter(loan => loan.isActive);
+
+  const [draggingId, setDraggingId] = React.useState<string | null>(null);
+  const [hoverId, setHoverId] = React.useState<string | null>(null);
 
   if (activeLoans.length === 0) {
     return (
@@ -32,6 +41,14 @@ const LoanTable: React.FC<LoanTableProps> = ({
       </div>
     );
   }
+
+  const getRowIdFromEvent = (e: React.DragEvent | React.DragEvent<HTMLTableRowElement>) => {
+    let el = e.target as HTMLElement | null;
+    while (el && el.tagName !== 'TR') {
+      el = el.parentElement;
+    }
+    return el ? el.getAttribute('data-loan-id') : null;
+  };
 
   return (
     <div className="glass-card overflow-hidden">
@@ -58,16 +75,65 @@ const LoanTable: React.FC<LoanTableProps> = ({
               )}
             </tr>
           </thead>
-          <tbody>
+          <tbody
+            onDragOver={(e) => {
+              // Allow dropping to move to end of list
+              e.preventDefault();
+            }}
+            onDrop={(e) => {
+              // Drop on tbody -> move to end
+              e.preventDefault();
+              const fromId = e.dataTransfer.getData('text/plain');
+              if (fromId && onReorder) {
+                onReorder(fromId, null);
+              }
+              setDraggingId(null);
+              setHoverId(null);
+            }}
+          >
             {activeLoans.map((loan, index) => {
               const details = calculateLoanDetails(loan);
+              const isSelected = selectedLoanId === loan.id;
+              const isDragging = draggingId === loan.id;
+              const isHover = hoverId === loan.id && draggingId !== loan.id;
               return (
                 <motion.tr
                   key={loan.id}
+                  data-loan-id={loan.id}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('text/plain', loan.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                    setDraggingId(loan.id);
+                    setHoverId(null);
+                  }}
+                  onDragEnd={() => {
+                    setDraggingId(null);
+                    setHoverId(null);
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    const overId = getRowIdFromEvent(e);
+                    if (overId && overId !== draggingId) {
+                      setHoverId(overId);
+                    }
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const fromId = e.dataTransfer.getData('text/plain');
+                    const toId = getRowIdFromEvent(e) || null;
+                    if (fromId && onReorder) {
+                      // If dropped on itself, no-op
+                      if (fromId !== toId) onReorder(fromId, toId);
+                    }
+                    setDraggingId(null);
+                    setHoverId(null);
+                  }}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
-                  className="border-b border-white/5 hover:bg-white/5 transition-colors"
+                  className={`border-b border-white/5 hover:bg-white/5 transition-colors cursor-pointer ${isSelected ? 'bg-white/10 ring-1 ring-purple-400/40' : ''} ${isDragging ? 'opacity-50' : ''} ${isHover ? 'bg-white/8' : ''}`}
+                  onClick={(e) => { e.stopPropagation(); onSelect?.(loan.id); }}
                 >
                   <td className="py-4 px-6">
                     <div>
@@ -106,7 +172,7 @@ const LoanTable: React.FC<LoanTableProps> = ({
                       <div className="flex items-center justify-center space-x-2">
                         {onEdit && (
                           <button
-                            onClick={() => onEdit?.(loan)}
+                            onClick={(e) => { e.stopPropagation(); onEdit?.(loan); }}
                             className="p-2 text-white/60 hover:text-blue-400 transition-colors"
                             title="Edit Loan"
                           >
@@ -115,7 +181,7 @@ const LoanTable: React.FC<LoanTableProps> = ({
                         )}
                         {onPartPayment && (
                           <button
-                            onClick={() => onPartPayment?.(loan)}
+                            onClick={(e) => { e.stopPropagation(); onPartPayment?.(loan); }}
                             className="p-2 text-white/60 hover:text-green-400 transition-colors"
                             title="Make Part Payment"
                           >
@@ -124,7 +190,7 @@ const LoanTable: React.FC<LoanTableProps> = ({
                         )}
                         {onUndoLastPartPayment && loan.partPayments.length > 0 && (
                           <button
-                            onClick={() => onUndoLastPartPayment?.(loan)}
+                            onClick={(e) => { e.stopPropagation(); onUndoLastPartPayment?.(loan); }}
                             className="p-2 text-white/60 hover:text-yellow-400 transition-colors"
                             title="Undo Last Part Payment"
                           >
@@ -133,7 +199,7 @@ const LoanTable: React.FC<LoanTableProps> = ({
                         )}
                         {onDelete && (
                           <button
-                            onClick={() => onDelete?.(loan.id)}
+                            onClick={(e) => { e.stopPropagation(); onDelete?.(loan.id); }}
                             className="p-2 text-white/60 hover:text-red-400 transition-colors"
                             title="Delete Loan"
                           >

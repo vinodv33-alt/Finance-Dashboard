@@ -337,3 +337,22 @@ export const getCombinedLoanProjection = (loans: Loan[]): {
 
   return combinedData;
 };
+
+/**
+ * Simulate remaining EMIs given outstanding principal, EMI and interest rate
+ */
+export const simulateRemainingEmis = (outstanding: number, emi: number, annualRate: number): number => {
+  const monthlyRate = Number(annualRate) / 100 / 12;
+  if (outstanding <= 0 || emi <= 0 || monthlyRate < 0) return 0;
+  let rp = outstanding;
+  let months = 0;
+  const safetyCap = 1200; // 100 years
+  for (let i = 0; i < safetyCap && rp > 0; i++) {
+    const interest = rp * monthlyRate;
+    const principalPay = Math.max(0, emi - interest);
+    if (principalPay <= 0) { months = 0; break; }
+    rp = Math.max(0, rp - principalPay);
+    months++;
+  }
+  return months;
+};

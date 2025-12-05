@@ -9,15 +9,16 @@ import LoanProjectionChart from './LoanProjectionChart';
 import PartPaymentForm from '@/components/LoanManagement/PartPaymentForm';
 
 const Dashboard: React.FC = () => {
-  const { dashboardData, lastRefresh, addPartPayment, removeLastPartPayment } = useDashboard();
+  const { dashboardData, lastRefresh, addPartPayment, removeLastPartPayment, reorderLoans } = useDashboard();
   const [partPaymentLoanId, setPartPaymentLoanId] = useState<string | null>(null);
+  const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null);
 
   const selectedLoan = partPaymentLoanId
     ? dashboardData.loans.find(l => l.id === partPaymentLoanId) || null
     : null;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" onClick={() => setSelectedLoanId(null)}>
       {/* Auto-refresh indicator */}
       {lastRefresh && (
         <motion.div
@@ -86,7 +87,24 @@ const Dashboard: React.FC = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.35 }}
       >
-        <LoanProjectionChart dashboardData={dashboardData} />
+        {/* Hint: show when a particular loan is selected */}
+        {selectedLoanId && (
+          <div className="mb-4 p-3 bg-white/5 rounded-lg flex items-center justify-between">
+            <div className="text-white/80 text-sm">
+              Showing projection for: <span className="font-semibold text-white">{dashboardData.loans.find(l => l.id === selectedLoanId)?.name || 'Loan'}</span>
+              <span className="text-white/60"> — click outside to view all</span>
+            </div>
+            <div>
+              <button
+                onClick={(e) => { e.stopPropagation(); setSelectedLoanId(null); }}
+                className="px-3 py-1 bg-purple-500/20 text-purple-300 rounded-md text-sm"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+        <LoanProjectionChart dashboardData={dashboardData} selectedLoanId={selectedLoanId} />
       </motion.div>
 
       {/* Loan Table with Part Payment action */}
@@ -103,6 +121,12 @@ const Dashboard: React.FC = () => {
               removeLastPartPayment(loan.id);
             }
           }}
+          onSelect={(loanId) => {
+            // toggle selection: select clicked loan or deselect if same
+            setSelectedLoanId(prev => (prev === loanId ? null : loanId));
+          }}
+          onReorder={reorderLoans}
+          selectedLoanId={selectedLoanId}
           showActions={true}
         />
       </motion.div>

@@ -58,11 +58,70 @@ const LoanForm: React.FC<LoanFormProps> = ({ loan, onSubmit, onCancel, title }) 
     ? calculateEMI(principal, rate, tenure)
     : 0;
 
+  // Helper to compute remaining EMIs given outstanding, EMI and annual rate
+  const computeRemainingEmis = (outstanding: number, emi: number, annualRate: number) => {
+    const monthlyRate = annualRate / 100 / 12;
+    if (outstanding <= 0 || emi <= 0 || monthlyRate < 0) return 0;
+    let rp = outstanding;
+    let months = 0;
+    const safetyCap = 1200;
+    while (rp > 0 && months < safetyCap) {
+      const interest = rp * monthlyRate;
+      const principalPay = Math.max(0, emi - interest);
+      if (principalPay <= 0) {
+        // EMI too low to cover interest; cannot amortize
+        months = 0;
+        break;
+      }
+      rp = Math.max(0, rp - principalPay);
+      months++;
+    }
+    return months;
+  };
+
+  // Track the initial tenure for existing loans so we don't overwrite a user's manual change
+  const initialTenureRef = React.useRef<number | null>(loan?.tenure ?? null);
+
+  // For new loans (loan == undefined) we should calculate tenure automatically
+  React.useEffect(() => {
+    const selectedEmi = useCustomEmi ? (Number(customEmi) || 0) : (calculatedEmi || 0);
+    const outstanding = Number(principal) || 0;
+    const annual = Number(rate) || 0;
+
+    const remaining = computeRemainingEmis(outstanding, selectedEmi, annual);
+
+    if (!loan) {
+      // only for new loans
+      if (remaining > 0) {
+        setValue('tenure', remaining);
+      } else {
+        // If we couldn't compute (zero months), leave tenure as-is (user may adjust EMI)
+        setValue('tenure', 0);
+      }
+      return;
+    }
+
+    // For existing loans (editing): only auto-update tenure if the user hasn't modified it
+    if (initialTenureRef.current == null) {
+      initialTenureRef.current = Number(loan.tenure) || 0;
+    }
+
+    const currentTenure = Number(tenure || 0);
+    if (currentTenure === initialTenureRef.current) {
+      if (remaining > 0) {
+        setValue('tenure', remaining);
+      }
+    }
+  }, [principal, rate, useCustomEmi, customEmi, calculatedEmi, loan, setValue, tenure]);
+
   const handleFormSubmit = (data: FormData) => {
     const startDate = new Date(data.startDate);
 
     // Use custom EMI if selected, otherwise use calculated EMI
     const emiAmount = data.useCustomEmi && data.customEmi ? Number(data.customEmi) : calculatedEmi;
+
+    // If adding a new loan, the watched tenure was automatically set via effect; for edit, use form tenure
+    const finalTenure = loan ? Number(data.tenure) : Number(data.tenure || 0);
 
     const loanData: Omit<Loan, 'id'> = {
       name: data.name,
@@ -74,7 +133,7 @@ const LoanForm: React.FC<LoanFormProps> = ({ loan, onSubmit, onCancel, title }) 
       useCustomEmi: Boolean(data.useCustomEmi),
       customEmi: data.useCustomEmi ? Number(data.customEmi) || Number(emiAmount) : undefined,
       startDate,
-      tenure: Number(data.tenure),
+      tenure: finalTenure,
       nextEmiDate: addMonths(startDate, 1),
       isActive: true,
       partPayments: loan?.partPayments || [],
@@ -162,21 +221,42 @@ const LoanForm: React.FC<LoanFormProps> = ({ loan, onSubmit, onCancel, title }) 
 
             {/* Tenure */}
             <div>
-              <label className="block text-white/90 text-sm font-medium mb-2">
-                Tenure (Months) *
-              </label>
-              <input
-                {...register('tenure', {
-                  required: 'Tenure is required',
-                  min: { value: 1, message: 'Minimum tenure is 1 month' },
-                  max: { value: 360, message: 'Maximum tenure is 360 months' }
-                })}
-                type="number"
-                className="glass-input w-full"
-                placeholder="240"
-              />
-              {errors.tenure && (
-                <p className="text-red-400 text-sm mt-1">{errors.tenure.message}</p>
+              {/* If editing an existing loan, allow tenure input. For new loans, tenure is computed from outstanding, rate and EMI. */}
+              {loan ? (
+                <>
+                  <label className="block text-white/90 text-sm font-medium mb-2">
+                    Tenure (Months) *
+                  </label>
+                  <input
+                    {...register('tenure', {
+                      required: 'Tenure is required',
+                      min: { value: 1, message: 'Minimum tenure is 1 month' },
+                      max: { value: 360, message: 'Maximum tenure is 360 months' }
+                    })}
+                    type="number"
+                    className="glass-input w-full"
+                    placeholder="240"
+                  />
+                  {errors.tenure && (
+                    <p className="text-red-400 text-sm mt-1">{errors.tenure.message}</p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <label className="block text-white/90 text-sm font-medium mb-2">Estimated EMIs Remaining</label>
+                  <div className="glass-input py-3">
+                    {(() => {
+                      const selectedEmi = useCustomEmi ? (Number(customEmi) || 0) : (calculatedEmi || 0);
+                      const est = computeRemainingEmis(Number(principal) || 0, selectedEmi, Number(rate) || 0);
+                      return (
+                        <div className="flex items-center justify-between">
+                          <div className="text-white/80">{est > 0 ? `${est} months` : 'Unable to compute — adjust EMI or rate'}</div>
+                          <div className="text-white/60 text-sm">(calculated automatically)</div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </>
               )}
             </div>
           </div>

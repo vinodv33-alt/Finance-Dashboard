@@ -5,7 +5,9 @@ import {
   calculateTotalDebt,
   calculateTotalMonthlyEMI,
   generateSuggestions,
-  calculateLoanDetails
+  calculateLoanDetails,
+  calculateEMI,
+  simulateRemainingEmis
 } from '@/utils/calculations';
 
 /**
@@ -39,8 +41,90 @@ export const useLoans = () => {
   const updateLoan = useCallback((loanId: string, updates: Partial<Loan>) => {
     const updatedLoans = loans.map(loan => {
       if (loan.id === loanId) {
-        const updatedLoan = { ...loan, ...updates };
-        return updatedLoan;
+        // Merge updates
+        const merged: Loan = { ...loan, ...updates } as Loan;
+
+        // Normalize numeric fields
+        merged.principalAmount = Number(merged.principalAmount) || 0;
+        merged.currentPrincipal = merged.currentPrincipal != null ? Number(merged.currentPrincipal) : Number(merged.principalAmount) || 0;
+        merged.interestRate = Number(merged.interestRate) || 0;
+        merged.tenure = merged.tenure != null ? Number(merged.tenure) : 0;
+        merged.emiAmount = merged.emiAmount != null ? Number(merged.emiAmount) : 0;
+
+        // If principalAmount was edited and currentPrincipal wasn't explicitly provided in updates,
+        // assume user updated the outstanding to the new principal amount.
+        if (updates.principalAmount != null && updates.currentPrincipal == null) {
+          merged.currentPrincipal = Number(updates.principalAmount) || merged.currentPrincipal || 0;
+        }
+
+        // Determine whether the user provided specific fields so we can decide what to recompute.
+        const editedPrincipal = updates.principalAmount != null;
+        const editedEmi = updates.emiAmount != null || updates.customEmi != null || updates.useCustomEmi != null;
+        const editedRate = updates.interestRate != null;
+        const editedTenure = updates.tenure != null;
+
+        // Respect custom EMI preference if set; prefer explicit customEmi when useCustomEmi true
+        let selectedEmi = 0;
+        if (merged.useCustomEmi) {
+          if (merged.customEmi && Number(merged.customEmi) > 0) {
+            selectedEmi = Number(merged.customEmi);
+          } else if (merged.emiAmount && Number(merged.emiAmount) > 0) {
+            selectedEmi = Number(merged.emiAmount);
+          }
+        } else {
+          // If EMI was edited explicitly use that
+          if (editedEmi && merged.emiAmount && Number(merged.emiAmount) > 0) {
+            selectedEmi = Number(merged.emiAmount);
+          }
+        }
+
+        const principalForCalc = Number(merged.currentPrincipal || merged.principalAmount || 0);
+        const annualRate = Number(merged.interestRate || 0);
+
+        // Recompute EMI in these cases:
+        // - Interest rate changed and user isn't forcing a custom EMI
+        // - Tenure was changed (user expects EMI to reflect tenure)
+        // - No explicit EMI provided but tenure exists
+        if (!merged.useCustomEmi) {
+          if (editedRate || editedTenure || (!selectedEmi && merged.tenure > 0)) {
+            if (merged.tenure > 0) {
+              selectedEmi = calculateEMI(principalForCalc, annualRate, merged.tenure);
+            }
+          }
+        }
+
+        // If still no selectedEmi but merged.emiAmount exists, use it
+        if (!selectedEmi && merged.emiAmount && Number(merged.emiAmount) > 0) {
+          selectedEmi = Number(merged.emiAmount);
+        }
+
+        // If user explicitly edited EMI (e.g., via form), prefer that value and, if using custom, persist it
+        if (editedEmi) {
+          if (merged.useCustomEmi && merged.customEmi) {
+            selectedEmi = Number(merged.customEmi);
+          } else if (merged.emiAmount) {
+            selectedEmi = Number(merged.emiAmount);
+          }
+        }
+
+        // Finalize selected EMI
+        merged.emiAmount = Number(selectedEmi || 0);
+        if (merged.useCustomEmi && merged.customEmi) {
+          merged.customEmi = Number(merged.customEmi);
+        } else {
+          merged.customEmi = undefined;
+        }
+
+        // Recompute remaining EMIs (tenure) based on current outstanding, selected EMI and interest rate
+        const remaining = simulateRemainingEmis(principalForCalc, Number(merged.emiAmount || 0), annualRate);
+        if (remaining > 0) {
+          merged.tenure = Number(remaining);
+        } else {
+          // If remaining could not be computed (e.g., EMI too low), keep existing tenure if present
+          merged.tenure = merged.tenure || 0;
+        }
+
+        return merged;
       }
       return loan;
     });
@@ -94,6 +178,26 @@ export const useLoans = () => {
     storage.saveLoans(updatedLoans);
   }, [loans]);
 
+  const reorderLoans = useCallback((fromId: string, toId: string | null) => {
+    const fromIndex = loans.findIndex(l => l.id === fromId);
+    if (fromIndex === -1) return;
+    const newLoans = [...loans];
+    const [item] = newLoans.splice(fromIndex, 1);
+    if (!toId) {
+      // move to end
+      newLoans.push(item);
+    } else {
+      const toIndex = newLoans.findIndex(l => l.id === toId);
+      if (toIndex === -1) {
+        newLoans.push(item);
+      } else {
+        newLoans.splice(toIndex, 0, item);
+      }
+    }
+    setLoans(newLoans);
+    storage.saveLoans(newLoans);
+  }, [loans]);
+
   return {
     loans,
     loading,
@@ -101,7 +205,8 @@ export const useLoans = () => {
     updateLoan,
     deleteLoan,
     addPartPayment,
-    removeLastPartPayment
+    removeLastPartPayment,
+    reorderLoans
   };
 };
 
@@ -163,7 +268,7 @@ export const useSavings = () => {
  * Custom hook for dashboard data and auto-refresh
  */
 export const useDashboard = () => {
-  const { loans, addPartPayment, removeLastPartPayment } = useLoans();
+  const { loans, addPartPayment, removeLastPartPayment, reorderLoans } = useLoans();
   const { savings, totalSavings } = useSavings();
   const [suggestions, setSuggestions] = useState<FinancialSuggestion[]>([]);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
@@ -208,6 +313,7 @@ export const useDashboard = () => {
     suggestions,
     lastRefresh,
     addPartPayment,
-    removeLastPartPayment
+    removeLastPartPayment,
+    reorderLoans
   };
 };

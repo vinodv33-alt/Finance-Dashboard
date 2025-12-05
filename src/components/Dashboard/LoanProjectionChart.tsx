@@ -12,10 +12,15 @@ ChartJS.register(...registerables);
 
 interface LoanProjectionChartProps {
   dashboardData: DashboardData;
+  selectedLoanId?: string | null;
 }
 
-const LoanProjectionChart: React.FC<LoanProjectionChartProps> = ({ dashboardData }) => {
-  const projectionData = getCombinedLoanProjection(dashboardData.loans);
+const LoanProjectionChart: React.FC<LoanProjectionChartProps> = ({ dashboardData, selectedLoanId = null }) => {
+  const loansToProject = selectedLoanId
+    ? dashboardData.loans.filter(l => l.id === selectedLoanId)
+    : dashboardData.loans;
+
+  const projectionData = getCombinedLoanProjection(loansToProject);
 
   if (projectionData.length === 0) {
     return (
